@@ -71,12 +71,12 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
   input [2:0] rx_updn;
   input handlematch, comm_enable;
 
-  reg [3:0] rx_q_reg;
+  reg [3:0] rx_q_reg; //register to store Q value
   reg readfrommsp;
   reg [15:0] storedhandle;
   reg [1:0] bitsrcselect;
-  reg docrc;
-  reg rx_en, tx_en;
+  reg docrc; //flag to do crc or not
+  reg rx_en, tx_en; //enable transmitting or receiving
 
   reg commstate;
   parameter STATE_RX      = 1'b0;
@@ -97,7 +97,8 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
   // QueryAdj -> draw new rn, adjust stored Q value as per cmd, 
   //             take Q bits of rn as init slot counter (like a query)
   // QueryRep -> decrement existing slot counter value
-  reg [14:0] slotcounter;
+  reg [14:0] slotcounter; 
+  // master slot counter WHOAAAAAA
   
   // For query adjust, we will init slot counter based on q_adj
   wire [3:0] q_adj, q_up, q_dn;
@@ -110,13 +111,13 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
   // If we get a query or queryAdj, the state machine will 
   //   set slotcounter = newslotcounter as defined here:
   wire [14:0] newslotcounter;
-  wire [3:0] q_ctl;
+  wire [3:0] q_ctl; // just to store q from the input
   assign q_ctl = (rx_cmd == QUERY) ? rx_q : q_adj;
 
-  reg [14:0] slotcountermask;
+  reg [14:0] slotcountermask; //this mask will choose which bits actually matter - like a window?
 
-  always @ (q_ctl) begin
-  case(q_ctl)
+  always @ (q_ctl) begin //when change in q_ctl occurs
+    case(q_ctl) //whoaaa since q specifies the mask length basically, we're setting the length with the number of ones
     0:  slotcountermask = 15'b000000000000000;
     1:  slotcountermask = 15'b000000000000001;
     2:  slotcountermask = 15'b000000000000011;
@@ -136,7 +137,8 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
     default: slotcountermask = 15'b000000000000000;
   endcase
   end
-  assign newslotcounter = currentrn[14:0] & slotcountermask;
+  
+  assign newslotcounter = currentrn[14:0] & slotcountermask; // the slot is supposed to have some random Q bit number, Q decided based on mask
   
   always @ (posedge clk or posedge reset) begin
     if (reset) begin
@@ -154,43 +156,45 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
       if(txsetupdone) begin
         rx_en <= 0;
       end
-      if(tx_done) begin // tx_done
+      if(tx_done) begin // tx_done means transmit done, so receiving starts --> transition to receive state
         tx_en     <= 0;
         commstate <= STATE_RX;
       end else begin
         tx_en <= 1;
       end
-      end else if (commstate == STATE_RX) begin  // rx mode
+    end else if (commstate == STATE_RX) begin  // rx mode, where we finally make sense of the data
         if(packet_complete) begin
-          case (rx_cmd)
+          case (rx_cmd) //switch case to see which command received
            QUERYREP: begin
-             tagisopen   <= 0;
-             slotcounter <= slotcounter - 15'd1;
-             if (comm_enable & ((slotcounter-15'd1)==0 | ~use_q)) begin
-               commstate     <= STATE_TX;
-               bitsrcselect        <= bitsrcselect_RNG;
-               docrc         <= 0;
+             tagisopen   <= 0; // close tags openness since we're processing data
+             slotcounter <= slotcounter - 15'd1; // function of query rep is to decrement slot counter, so self explanatory. happens after the always block done - nba
+             if (comm_enable & ((slotcounter-15'd1)==0 | ~use_q)) begin // if slot counter finally 0 after this clk edge (or) direct signal to use_q --> check added feature no. 2
+               commstate     <= STATE_TX; // must transmit RN16 after slot counter reaches 0
+               // next is basically command output to tell tag that data being transmitted is rn. bitsrcselect_RNG is like a name to the command.
+               bitsrcselect        <= bitsrcselect_RNG;              
+               docrc         <= 0;// since a rn is being sent anyway, crc16 not needed?
              end else begin
-               rx_en <= 0;  // reset rx
+               rx_en <= 0;  // reset rx, await next command
              end
            end
            ACK: begin
              tagisopen <= 0;
              if (comm_enable && handlematch) begin
                commstate <= STATE_TX; // send ack.
-               bitsrcselect    <= use_uid ? bitsrcselect_UID : bitsrcselect_EPC;
-               docrc     <= 1;
+               bitsrcselect    <= use_uid ? bitsrcselect_UID : bitsrcselect_EPC;// whoaaaa now send epc, unless specified to send the tag uid. check added point 3
+               docrc     <= 1;// since we're sending epc
              end else begin
-             rx_en <= 0;  // reset rx
+             rx_en <= 0;  // reset rx, same principle
              end
            end
            QUERY: begin
              tagisopen <= 0;
-             rx_q_reg  <= rx_q;
+             rx_q_reg  <= rx_q; //they're the same, but the reg is it's actual memory
              // load slot counter
-             slotcounter <= newslotcounter;
+             slotcounter <= newslotcounter; // new slot counter taken from the received data about Q, line 141. But slot is a random number anyway, just length has to be specified
              
-             if (comm_enable & (newslotcounter==0 | ~use_q)) begin
+             //same code that was used in queryrep, for when slot == 0
+             if (comm_enable & (newslotcounter==0 | ~use_q)) begin // if the newslot counter, which wll be loaded into our slot counter after this clkedge over, turns 0
                commstate     <= STATE_TX;
                bitsrcselect        <= bitsrcselect_RNG;
                docrc         <= 0;
@@ -200,10 +204,11 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
            end
            QUERYADJ: begin
              tagisopen <= 0;
-             rx_q_reg  <= q_adj;
+             rx_q_reg  <= q_adj; // change q value
              // load slot counter
-             slotcounter <= newslotcounter;
+             slotcounter <= newslotcounter; // by then slot counter mask will change, so new slot counter will be updated with new length rn
              
+             //same code that was used in queryrep, for when slot == 0
              if (comm_enable & (newslotcounter==0 | ~use_q)) begin
                commstate     <= STATE_TX;
                bitsrcselect        <= bitsrcselect_RNG;
@@ -222,15 +227,14 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
            end
            REQRN: begin
              if (comm_enable && handlematch) begin
-
-               // First request RN opens tag, sets handle
+               // First, request_RN opens tag then sets handle, which will be another random number
                if (!tagisopen) begin
                  storedhandle <= currentrn;
                  tagisopen    <= 1;
                end
 
-               commstate <= STATE_TX;
-               bitsrcselect    <= bitsrcselect_RNG;
+               commstate <= STATE_TX; 
+               bitsrcselect    <= bitsrcselect_RNG;// because need to tx rn
                docrc     <= 1;
              end else begin
                rx_en <= 0;  // reset rx
