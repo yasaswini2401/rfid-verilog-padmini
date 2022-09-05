@@ -85,9 +85,11 @@ assign thisbitmatches = (bitin == currenthandle[~handlebitcounter]); // handlebi
 wire lastbit;
 assign lastbit  = (handlebitcounter == 15); //is a flag - checks as high if counter reached end of 16 states
 
+//handlematch is 1 (OR) counter reached end, cmd is ACK and this bit matches
 wire handlematchout;
 assign handlematchout = handlematch | 
        ((handlebitcounter == 15) && packettype[1] && thisbitmatches);
+  
 //the 9 bit command names, rx_cmd or packettype
   parameter ACK        = 9'b000000010;
   parameter QUERY      = 9'b000000100;
@@ -102,7 +104,7 @@ always @ (negedge bitinclk or posedge reset) begin
   if (reset) begin
     writedataengated <= 0;
   end else begin
-    writedataengated <= writedataen;
+    writedataengated <= writedataen; // by gated, just mean shifted a little earlier to avoid glitches cus of prop delay
   end
 end
 
@@ -132,8 +134,11 @@ always @ (posedge bitinclk or posedge reset) begin
   end else begin
     case(packettype)
       QUERY: begin
+        //basically, first 8 bits are already read. ptr is just to indicate that 8 bit word was read.
+        //Also, 4 bits have already been pushed into packet parser, but packettype had not beenreceived by then
+        //So, thats where first 4 bits are going
         if (!ptrdone) begin
-          if (bitincounter >= 8) begin  // ptr done
+          if (bitincounter >= 8) begin  // ptr done, bit counter is for 9 bits long(0 to 9)
             ptrdone      <= 1;
             bitincounter <= 0;
           end else begin
