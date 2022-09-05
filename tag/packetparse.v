@@ -15,41 +15,51 @@
 // ack doesn't have any bits after the requested handle to clock this module.
 // So, there is a special case for the last bit of ack.
 
-// todo: EBV parsing
+// todo: EBV parsing, An extensible bit vector (EBV) is a data structure with an extensible data range
+//This protocol uses EBV-8 values to represent memory addresses and mask lengths.
 
 // todo: PTR parsing for read and write.
 
 // todo: Data decoding for write.
 
-module packetparse(reset, bitin, bitinclk, packettype, rx_q, rx_updn,
-                   currenthandle, currentrn, handlematch,
-                   readwritebank, readwriteptr, readwords,
+module packetparse(reset, bitin, bitinclk, packettype, //inputs
+                   rx_q, rx_updn,
+                   currenthandle, currentrn, //inputs as well
+                   handlematch, readwritebank, readwriteptr, readwords,
                    writedataout, writedataclk );
+//6 inputs
 input reset, bitin, bitinclk;
 input [8:0]  packettype;
 
 input [15:0] currenthandle;
 input [15:0] currentrn;
+
+//8 outputs
 output handlematch;
 output [3:0] rx_q;
 output [2:0] rx_updn;
 
-output [1:0] readwritebank;
-output [7:0] readwriteptr;
-output [7:0] readwords;
-output writedataout, writedataclk;
+output [1:0] readwritebank; //which memory bank to read from, if read. or write to, if write
+output [7:0] readwriteptr; //first word pointer?
+output [7:0] readwords;//number of words to read
+output writedataout, writedataclk; //parses the write data, which is included in the packet, if its a write command
 
-
-reg [3:0] handlebitcounter;
-reg [5:0] bitincounter;
+//op registers or wires
 reg       handlematch;
-reg       matchfailed;
-
 reg [3:0] rx_q;
 reg [2:0] rx_updn;
 reg [1:0] readwritebank;
 reg [7:0] readwriteptr;
 reg [7:0] readwords;
+  
+reg writedataout;
+wire writedataclk;
+  
+//created registers
+reg [3:0] handlebitcounter; // handle is 16 bits, so 4 bit counter needed?
+reg [5:0] bitincounter; // 6 bit counter
+reg       matchfailed;
+
 reg       writedataen;
 reg       writedataengated;
 reg       bankdone;
@@ -57,8 +67,6 @@ reg       ptrdone;
 reg       ebvdone;
 reg       datadone;
 
-reg writedataout;
-wire writedataclk;
 assign writedataclk = bitinclk & writedataengated;
 
 /*
@@ -72,15 +80,15 @@ assign bit1matches    = (bitin == fixedrn[14]);
 
 // real rn
 wire thisbitmatches;
-assign thisbitmatches = (bitin == currenthandle[~handlebitcounter]);
+assign thisbitmatches = (bitin == currenthandle[~handlebitcounter]); // handlebitcounter is a 4 bit counter
 
 wire lastbit;
-assign lastbit  = (handlebitcounter == 15);
+assign lastbit  = (handlebitcounter == 15); //is a flag - checks as high if counter reached end of 16 states
 
 wire handlematchout;
 assign handlematchout = handlematch | 
        ((handlebitcounter == 15) && packettype[1] && thisbitmatches);
-
+//the 9 bit command names, rx_cmd or packettype
   parameter ACK        = 9'b000000010;
   parameter QUERY      = 9'b000000100;
   parameter QUERYADJ   = 9'b000001000;
