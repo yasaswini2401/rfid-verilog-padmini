@@ -1,4 +1,125 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
 
+// Module Name: toptest
+// Aditional comments:
+// Simulates query command. 
+//next to be simulated- query adj
+//////////////////////////////////////////////////////////////////////////////////
+module toptest();
+
+      // Regular IO
+  // Oscillator input, master reset, demodulator input
+  reg  reset, clk, demodin;
+
+  // Modulator output
+  wire modout;
+
+  // Functionality control
+  reg use_uid, use_q, comm_enable;
+
+  // EPC ID source
+  reg  [7:0] uid_byte_in;
+  wire [3:0] uid_addr_out;
+  wire       uid_clk_out;
+
+  // ADC connections, not needed for now
+  reg  adc_sample_datain;
+  wire adc_sample_clk, adc_sample_ctl;
+
+  // MSP430 connections, not needed for now
+  reg  msp_sample_datain;
+  wire msp_sample_clk, msp_sample_ctl;
+  wire writedataout, writedataclk;
+
+  // Debugging IO
+  wire  debug_clk;
+  wire debug_out;
+  
+  reg [1800:0] bitquery;
+  reg [1800:0] bitqueryadj;
+  
+  wire [15:0] counter;
+  reg counterenb;
+  wire overflow;
+  
+  
+  parameter QUERYREP   = 9'b000000001;
+  parameter ACK        = 9'b000000010;
+  parameter QUERY      = 9'b000000100;
+  parameter QUERYADJ   = 9'b000001000;
+  parameter SELECT     = 9'b000010000;
+  parameter NACK       = 9'b000100000;
+  parameter REQRN      = 9'b001000000;
+  parameter READ       = 9'b010000000;
+  parameter WRITE      = 9'b100000000;
+  
+  reg [8:0] command;
+  
+    counter16 c10(.clk(clk), .reset(reset), .enable(counterenb), .count(counter), .overflow(overflow));
+    top U_top(reset, clk, demodin, modout, // regular IO
+           adc_sample_ctl, adc_sample_clk, adc_sample_datain,    // adc connections
+           msp_sample_ctl, msp_sample_clk, msp_sample_datain, // msp430 connections
+           uid_byte_in, uid_addr_out, uid_clk_out,
+           writedataout, writedataclk, 
+           use_uid, use_q, comm_enable,
+           debug_clk, debug_out);
+           
+    
+           
+    initial begin
+        reset = 1;
+        clk = 0;
+        demodin = 1;
+        
+        use_uid=0;
+        use_q = 0;
+        comm_enable = 1;
+        uid_byte_in = 8'b00000000;
+        adc_sample_datain = 0;
+        msp_sample_datain=0;
+        
+        counterenb = 1;
+        command = QUERY;
+        
+        
+        #0.1
+        reset = 0;
+        
+        #2000
+        
+        command = QUERYADJ;
+
+        end
+    
+    always #0.1 clk = ~clk; //2.5MHz clock frequency, bit rate
+    
+    assign debug_clk = clk;
+
+
+    initial begin
+       bitquery = 1801'b1111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111000000000000000000000000111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100000000000000000000000011111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100000000000000000000000011111111111111111111111100000000000000000000000011111111111111111111111;
+       bitqueryadj = 1801'd0;          
+    end
+    
+    
+
+
+    always@(posedge clk && !reset) begin
+    //initial
+        if(counter <= 16'd1800) begin
+            bitquery <= bitquery >> 1;
+            demodin = bitquery;      
+        end
+        else demodin =1; 
+        
+       
+    end
+
+
+endmodule
+
+/*
 // FGPA Test of TOP functional block.
 // Copyright 2010 University of Washington
 // License: http://creativecommons.org/licenses/by/3.0/
@@ -122,3 +243,4 @@ top U_TOP (reset, clk, demodin, modout, // regular IO
            debug_clk, debug_out);
 
 endmodule
+*/
