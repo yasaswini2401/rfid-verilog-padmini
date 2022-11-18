@@ -1,4 +1,3 @@
-
 // Top level which connects all the top-level functional blocks.
 // Copyright 2010 University of Washington
 // License: http://creativecommons.org/licenses/by/3.0/
@@ -197,6 +196,7 @@ module top(reset, clk, demodin, modout, // regular IO
                            trcal_out, m_out, dr_out, trext_out);
 
   rx        U_RX  (rx_reset, clk, demodin, bitout, bitclk, rx_overflow, trcal_in, rngbitin);
+  
   cmdparser U_CMD (rxtop_reset, bitout, bitclk, rx_cmd, packet_complete, cmd_complete,
                    m_in, trext_in, dr_in);
 
@@ -206,14 +206,18 @@ module top(reset, clk, demodin, modout, // regular IO
                       writedataout, writedataclk );
 
   rng       U_RNG  (tx_reset, reset, rngbitin, rngbitinclk, rngbitclk, rngbitsrc, rngdatadone, currentrn);
+  
   epc       U_EPC  (tx_reset, epcbitclk, epcbitsrc, epcdatadone);
+  
   read      U_READ (tx_reset, readbitclk, readbitsrc, readdatadone, 
                     read_sample_ctl, read_sample_clk, read_sample_datain, 
                     currenthandle);
+                    
   uid       U_UID  (tx_reset, uidbitclk, uidbitsrc, uiddatadone, 
                     uid_byte_in, uid_addr_out, uid_clk_out);
 
   sequencer U_SEQ (tx_reset, rx_overflow, clk, m_out, dr_out, docrc, trext_out, 
                    trcal_out, txbitsrc, txdatadone, txbitclk, modout, txsetupdone, tx_done);
-
+//module sequencer (reset, rtcal_expired, oscclk, m, dr, docrc, trext, trcal, 
+//                  databitsrc, datadone, dataclk, modout, txsetupdone, txdone);
 endmodule
