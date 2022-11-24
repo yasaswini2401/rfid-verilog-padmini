@@ -1,3 +1,7 @@
+//added modifications - trasnmitter
+
+
+
 
 // Command Parser: Parses reader command and signals packet completion.
 // Copyright 2010 University of Washington
@@ -13,12 +17,12 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
   
   input        reset, bitin, bitclk;
   output       packet_complete_out, cmd_complete;
-  output [8:0] cmd_out;
+  output [9:0] cmd_out;
   output [1:0] m;
   output       trext, dr;
 
   reg        packet_complete_out;
-  wire [8:0] cmd_out;
+  wire [9:0] cmd_out;
   wire       packet_complete, cmd_complete;
   reg  [7:0] cmd;
   wire [7:0] new_cmd;
@@ -59,7 +63,9 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
                             (cmd_out[5] && count >= 7 ) ||  // Nack
                             (cmd_out[6] && count >= 39) ||  // ReqRN
                             (cmd_out[7] && count >= 57) ||  // Read
-                            (cmd_out[8] && count >= 58));   // Write
+                            (cmd_out[8] && count >= 58))||   // Write
+                            (cmd_out[9] && count >= 9 ) ; //trans added command 11011010 
+                            
   
   
   assign cmd_out[0] = (count >= 2 && ~cmd[0] && ~cmd[1]);  // QueryRep
@@ -68,9 +74,10 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
   assign cmd_out[3] = (count >= 4 &&  cmd[0] && ~cmd[1] && ~cmd[2] &&  cmd[3]); // QueryAdj
   assign cmd_out[4] = (count >= 4 &&  cmd[0] && ~cmd[1] &&  cmd[2] && ~cmd[3]); // Select
   assign cmd_out[5] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] && ~cmd[7]); //Nack
-  assign cmd_out[6] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] &&  cmd[7]); // RegRN
+  assign cmd_out[6] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] &&  cmd[7]); // ReqRN
   assign cmd_out[7] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7]); // Read
   assign cmd_out[8] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] &&  cmd[7]); // Write
+  assign cmd_out[9] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7] && cmd[3]); //added
                             
   assign new_cmd[0] = (count==0) ? bitin : cmd[0];
   assign new_cmd[1] = (count==1) ? bitin : cmd[1];
