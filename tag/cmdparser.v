@@ -1,4 +1,4 @@
-//added modifications - trasnmitter
+//modifications, iteration 1
 
 
 
@@ -17,11 +17,13 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
   
   input        reset, bitin, bitclk;
   output       packet_complete_out, cmd_complete;
-  output [9:0] cmd_out;
+  ///
+  output [9:0] cmd_out;//10 diff commands
   output [1:0] m;
   output       trext, dr;
 
   reg        packet_complete_out;
+  ///
   wire [9:0] cmd_out;
   wire       packet_complete, cmd_complete;
   reg  [7:0] cmd;
@@ -64,6 +66,7 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
                             (cmd_out[6] && count >= 39) ||  // ReqRN
                             (cmd_out[7] && count >= 57) ||  // Read
                             (cmd_out[8] && count >= 58))||   // Write
+                            ///
                             (cmd_out[9] && count >= 9 ) ; //trans added command 11011010 
                             
   
@@ -77,6 +80,7 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
   assign cmd_out[6] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] &&  cmd[7]); // ReqRN
   assign cmd_out[7] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7]); // Read
   assign cmd_out[8] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] &&  cmd[7]); // Write
+  ///
   assign cmd_out[9] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7] && cmd[3]); //added
                             
   assign new_cmd[0] = (count==0) ? bitin : cmd[0];
