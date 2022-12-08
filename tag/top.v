@@ -1,3 +1,6 @@
+///modified code
+
+
 // Top level which connects all the top-level functional blocks.
 // Copyright 2010 University of Washington
 // License: http://creativecommons.org/licenses/by/3.0/
@@ -26,7 +29,12 @@ module top(reset, clk, demodin, modout, // regular IO
            uid_byte_in, uid_addr_out, uid_clk_out,
            writedataout, writedataclk, 
            use_uid, use_q, comm_enable,
-           debug_clk, debug_out);
+           debug_clk, debug_out,
+           rx_cmd,
+           ///transmit clock
+           pll_enable, freq_channel, rforbase,
+           ////from sample data
+           adc_sample, senscode);
 
   // Regular IO
   // Oscillator input, master reset, demodulator input
@@ -55,11 +63,22 @@ module top(reset, clk, demodin, modout, // regular IO
   // Debugging IO
   input  debug_clk;
   output debug_out;
+  
+  ///
+  output pll_enable; /// final control for pll
+  output [3:0] freq_channel;
+  output rforbase;
+  ////
+  output [2:0] senscode;
+  output adc_sample;
+  
 
   // CONTROLLER module connections
   wire rx_en, tx_en, docrc;
   wire [15:0] currentrn;     // current rn
   wire [15:0] currenthandle; // current handle
+  wire plloff;  
+  wire adc_sample;
 
   // RX module connections
   wire rx_reset, rxtop_reset, bitclk, bitout;
@@ -73,10 +92,18 @@ module top(reset, clk, demodin, modout, // regular IO
   wire       writedataout, writedataclk;
   wire [3:0] rx_q;
   wire [2:0] rx_updn;
+  ///
+  wire pllenab;
+  wire [3:0] freq_channel;
+  wire rforbase;
+  ////
+  wire [2:0] senscode;
+  
+  
 
   // CMDPARSE module connections
   wire packet_complete, cmd_complete;
-  wire [8:0] rx_cmd;
+  output wire [11:0] rx_cmd;
 
   // TX module connections
   wire tx_reset, txsetupdone, tx_done;
@@ -88,7 +115,7 @@ module top(reset, clk, demodin, modout, // regular IO
   wire [9:0] trcal_in, trcal_out;
 
   // Signal to tx settings module to store TR modulation settings.
-  parameter QUERY = 9'b000000100;
+  parameter QUERY = 10'b000000100;
   wire query_complete;
   assign query_complete = packet_complete && (rx_cmd==QUERY);
 
@@ -100,10 +127,17 @@ module top(reset, clk, demodin, modout, // regular IO
   // TX module connections
   wire txbitclk, txbitsrc, txdatadone;
   
+  
+  
   // RX and TX module reset signals
   assign tx_reset    = reset | !tx_en;
   assign rx_reset    = reset | !rx_en;
   assign rxtop_reset = reset | !rx_en;
+  
+  ///
+  //mux control for pll on and off
+  
+  assign pll_enable = (pllenab) & (~plloff);
 
   // mux control for transmit data source
   wire [1:0] bitsrcselect;
@@ -190,7 +224,11 @@ module top(reset, clk, demodin, modout, // regular IO
                     packet_complete, txsetupdone, tx_done, 
                     rx_en, tx_en, docrc, handlematch,
                     bitsrcselect, readfrommsp, readwriteptr, rx_q, rx_updn,
-                    use_uid, use_q, comm_enable);
+                    use_uid, use_q, comm_enable,
+                    ///
+                    plloff,
+                    ////
+                    adc_sample);
 
   txsettings U_SET (reset, trcal_in,  m_in,  dr_in,  trext_in, query_complete,
                            trcal_out, m_out, dr_out, trext_out);
@@ -203,7 +241,11 @@ module top(reset, clk, demodin, modout, // regular IO
   packetparse U_PRSE (rx_reset, bitout, bitclk, rx_cmd, rx_q, rx_updn,
                       currenthandle, currentrn, handlematch,
                       readwritebank, readwriteptr, readwords,
-                      writedataout, writedataclk );
+                      writedataout, writedataclk,
+                      ///
+                      pllenab, freq_channel,rforbase,
+                      ////
+                      senscode);
 
   rng       U_RNG  (tx_reset, reset, rngbitin, rngbitinclk, rngbitclk, rngbitsrc, rngdatadone, currentrn);
   
