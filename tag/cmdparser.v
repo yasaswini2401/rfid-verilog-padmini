@@ -18,13 +18,13 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
   input        reset, bitin, bitclk;
   output       packet_complete_out, cmd_complete;
   ///
-  output [9:0] cmd_out;//10 diff commands
+  output [11:0] cmd_out;//12 diff commands
   output [1:0] m;
   output       trext, dr;
 
   reg        packet_complete_out;
   ///
-  wire [9:0] cmd_out;
+  wire [11:0] cmd_out;
   wire       packet_complete, cmd_complete;
   reg  [7:0] cmd;
   wire [7:0] new_cmd;
@@ -67,21 +67,31 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
                             (cmd_out[7] && count >= 57) ||  // Read
                             (cmd_out[8] && count >= 58))||   // Write
                             ///
-                            (cmd_out[9] && count >= 9 ) ; //trans added command 11011010 
+                            (cmd_out[9] && count >= 13) ||   //trans added command 11011010 plus 6 bits
+                            ////
+                            (cmd_out[10] && count >= 26)||   //11011111, sample sensor data plus 3 bits plus crc16
+                            /////
+                            (cmd_out[11] && count >= 43);  //read sensor data - 8+1+3+32 = 44
                             
   
   
-  assign cmd_out[0] = (count >= 2 && ~cmd[0] && ~cmd[1]);  // QueryRep
-  assign cmd_out[1] = (count >= 2 && ~cmd[0] &&  cmd[1]);  // Ack
-  assign cmd_out[2] = (count >= 4 &&  cmd[0] && ~cmd[1] && ~cmd[2] && ~cmd[3]); // query
-  assign cmd_out[3] = (count >= 4 &&  cmd[0] && ~cmd[1] && ~cmd[2] &&  cmd[3]); // QueryAdj
-  assign cmd_out[4] = (count >= 4 &&  cmd[0] && ~cmd[1] &&  cmd[2] && ~cmd[3]); // Select
-  assign cmd_out[5] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] && ~cmd[7]); //Nack
-  assign cmd_out[6] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] &&  cmd[7]); // ReqRN
-  assign cmd_out[7] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7]); // Read
-  assign cmd_out[8] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] &&  cmd[7]); // Write
+  assign cmd_out[0] = (count >= 2 && ~cmd[0] && ~cmd[1]);  // QueryRep 00
+  assign cmd_out[1] = (count >= 2 && ~cmd[0] &&  cmd[1]);  // Ack 01
+  assign cmd_out[2] = (count >= 4 &&  cmd[0] && ~cmd[1] && ~cmd[2] && ~cmd[3]); // query 1000
+  assign cmd_out[3] = (count >= 4 &&  cmd[0] && ~cmd[1] && ~cmd[2] &&  cmd[3]); // QueryAdj 1001
+  assign cmd_out[4] = (count >= 4 &&  cmd[0] && ~cmd[1] &&  cmd[2] && ~cmd[3]); // Select 1010
+  assign cmd_out[5] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] && ~cmd[7]); //Nack 11000000
+  assign cmd_out[6] = (count >= 8 &&  cmd[0] &&  cmd[1] && ~cmd[6] &&  cmd[7]); // ReqRN 11000001
+  assign cmd_out[7] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7] && ~cmd[3]); // Read 11000010
+  assign cmd_out[8] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] &&  cmd[7] && ~cmd[3]); // Write 11000011
   ///
-  assign cmd_out[9] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7] && cmd[3]); //added
+  assign cmd_out[9] = (count >= 8 &&  cmd[0] &&  cmd[1] &&  cmd[6] && ~cmd[7] &&  cmd[3]); //added 11011010
+  ////
+  assign cmd_out[10] = (count >= 8 &&  cmd[0] && cmd[1] && ~cmd[2] &&  cmd[6] &&  cmd[7] && cmd[3]); //11011111
+  /////
+  assign cmd_out[11] = (count >= 8 &&  cmd[0] && cmd[1] && ~cmd[2] && ~cmd[6] && ~cmd[7] && cmd[3]);//11011000
+                 
+                 
                             
   assign new_cmd[0] = (count==0) ? bitin : cmd[0];
   assign new_cmd[1] = (count==1) ? bitin : cmd[1];
