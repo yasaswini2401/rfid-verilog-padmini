@@ -36,9 +36,11 @@ module packetparse(reset, bitin, bitinclk, packettype, //inputs
                    //// for sample sens data
                    senscode,
                    ///// for read sample data
-                   morb_trans);
+                   morb_trans,
+                   //select
+                   sel_target, sel_action, sel_bank, sel_ptr, sel_masklen, mask, masklendone);
                    
-//6 inputs
+//7 inputs
 input reset, bitin, bitinclk;
 ///
 input [11:0]  packettype;
@@ -46,7 +48,8 @@ input [11:0]  packettype;
 input [15:0] currenthandle;
 input [15:0] currentrn;
 
-//8 outputs
+
+//outputs
 output handlematch;
 output [3:0] rx_q;
 output [2:0] rx_updn;
@@ -60,11 +63,23 @@ output [2:0] senscode;
 /////
 output morb_trans; //main or backscatter transmitter
 
+//select command
+output [2:0] sel_target;
+output [2:0] sel_action;
+output [1:0] sel_bank;
+output [7:0] sel_ptr;
+output [7:0] sel_masklen;
+output [255: 0] mask;
+output       masklendone; 
+
 
 output [1:0] readwritebank; //which memory bank to read from, if read. or write to, if write
-output [7:0] readwriteptr; //first word pointer?
+output [7:0] readwriteptr; //first word pointer
 output [7:0] readwords;//number of words to read
 output writedataout, writedataclk; //parses the write data, which is included in the packet, if its a write command
+
+//*//crc check bit - 1 if crc checks out
+//for crc5 - query, rest all crc16. Say checking for req_rn first
 
 //op registers or wires
 reg       handlematch;
@@ -86,19 +101,32 @@ reg [2:0] senscode;
 /////
 reg morb_trans;
   
+//select command
+reg [2:0] sel_target;
+reg [2:0] sel_action;
+reg [1:0] sel_bank;
+reg [7:0] sel_ptr;
+reg [7:0] sel_masklen;
+reg [255: 0] mask;
+reg       masklendone; 
+
+
 //created registers
 
 reg [3:0] handlebitcounter; // handle is 16 bits, so 4 bit counter needed
 reg [5:0] bitincounter; // 6 bit counter
 reg       matchfailed;
 
-//read and write
+//read and write, select
 reg       writedataen;
 reg       writedataengated;
 reg       bankdone;
 reg       ptrdone;
 reg       ebvdone;
 reg       datadone;
+       
+
+ 
 
 assign writedataclk = bitinclk & writedataengated;
 
@@ -125,13 +153,17 @@ assign handlematchout = handlematch |
   
 //the 12 bit command names, rx_cmd or packettype
 ///
+  parameter QUERYREP   = 12'b000000000001;
   parameter ACK        = 12'b000000000010;
   parameter QUERY      = 12'b000000000100;
   parameter QUERYADJ   = 12'b000000001000;
+  parameter SELECT     = 12'b000000010000;
+  parameter NACK       = 12'b000000100000;
+  
   parameter REQRN      = 12'b000001000000;
   parameter READ       = 12'b000010000000;
   parameter WRITE      = 12'b000100000000;
-  ///                     2  0
+  ///
   parameter TRNS       = 12'b001000000000;
   parameter SAMPSENS   = 12'b010000000000;
   parameter SENSDATA   = 12'b100000000000;
@@ -155,11 +187,12 @@ always @ (posedge bitinclk or posedge reset) begin
     handlematch      <= 0;
     matchfailed      <= 0;
     
-  //read and write
+  //read and write, select
     bankdone         <= 0;
     ptrdone          <= 0;
     ebvdone          <= 0;
     datadone         <= 0;
+    masklendone      <= 0;
 
     writedataen      <= 0;
     writedataout     <= 0;
@@ -176,6 +209,7 @@ always @ (posedge bitinclk or posedge reset) begin
     rfob             <= 0; //by default will be either baseband or transmitter frequency
     ////
     senscode         <= 3'd0; //sensor code
+    
 
 // check for read, write, req_rn, ack
   end else begin
@@ -205,6 +239,7 @@ always @ (posedge bitinclk or posedge reset) begin
           bitincounter <= bitincounter + 6'd1;
           rx_q[0] <= bitin;
         end
+            
       end
       QUERYADJ: begin
         if (!ptrdone) begin
@@ -236,6 +271,71 @@ always @ (posedge bitinclk or posedge reset) begin
           matchfailed <= 1;
         end
       end
+      SELECT: begin
+        if(bitincounter == 0) begin
+            bitincounter <= bitincounter + 6'd1;
+            sel_target[2] <= bitin;
+        end else if (bitincounter == 1) begin
+            bitincounter <= bitincounter + 6'd1;
+            sel_target[1] <= bitin;
+        end else if (bitincounter == 2) begin
+            bitincounter <= bitincounter + 6'd1;
+            sel_target[0] <= bitin;
+        end else if (bitincounter == 3) begin
+            bitincounter <= bitincounter + 6'd1;
+            sel_action[2] <= bitin;
+        end else if (bitincounter == 4) begin
+            bitincounter <= bitincounter + 6'd1;
+            sel_action[1] <= bitin;
+        end else if (bitincounter == 5) begin
+            bitincounter <= 0;
+            sel_action[0] <= bitin;
+ //read in bank for select          
+        end else if (!bankdone && (bitincounter == 0)) begin
+            bitincounter <= bitincounter + 6'd1;
+            sel_bank[1] <= bitin;
+        end else if (!bankdone && (bitincounter == 1)) begin
+            bitincounter <= 0;
+            sel_bank[0] <= bitin;
+            bankdone <= 1;
+//read in pointer, bit pointer not word pointer            
+        end else if (!ebvdone && (bitincounter == 0)) begin
+              if (!bitin) begin  // last ebv byte indicator
+                ebvdone        <= 1;
+                bitincounter   <= 1;
+              end else begin
+                bitincounter <= bitincounter + 6'd1;
+              end
+        // wait out the ebv if its not done
+        end else if (!ebvdone && (bitincounter < 7)) begin
+          bitincounter <= bitincounter + 6'd1;
+        // restart to the next ebv byte
+        end else if (!ebvdone && (bitincounter >= 7)) begin
+          bitincounter <= 0;
+
+        // read in the last 7 ebv byte bits as ptr
+        end else if (!ptrdone) begin
+              if (bitincounter >= 7) begin  // ptr done
+                ptrdone      <= 1;
+                bitincounter <= 0;
+              end else begin
+                bitincounter <= bitincounter + 6'd1;
+              end
+              readwriteptr[~bitincounter[2:0]] <= bitin;
+          
+        end else if (!masklendone && (bitincounter < 8)) begin
+              sel_masklen[~bitincounter[2:0]] <= bitin;
+              
+              if(bitincounter == 7) begin 
+                  bitincounter <= 0;
+                  masklendone <= 1;
+              end
+              else bitincounter <= bitincounter + 6'd1;
+        end else if( masklendone && (bitincounter ==0)) begin
+            
+        end
+        
+      end
       REQRN: begin
         if (!matchfailed && !lastbit && thisbitmatches) begin
           handlebitcounter <= handlebitcounter + 4'd1;
@@ -247,7 +347,7 @@ always @ (posedge bitinclk or posedge reset) begin
         end
       end
       READ: begin
-        // read: we start comparing after ebv is done and words is done.
+        // read: we  start comparing after ebv is done and words is done.
         if (!bankdone && (bitincounter == 0)) begin
           bitincounter <= bitincounter + 6'd1;
           readwritebank[1] <= bitin;
@@ -255,7 +355,8 @@ always @ (posedge bitinclk or posedge reset) begin
           bankdone <= 1;
           bitincounter <= 0;
           readwritebank[0] <= bitin;
-
+        
+        //next is pointer
         // if bitctr==0, see if the ebv is done
         end else if (!ebvdone && (bitincounter == 0)) begin
           if (!bitin) begin  // last ebv byte indicator
@@ -281,7 +382,7 @@ always @ (posedge bitinclk or posedge reset) begin
           end
           readwriteptr[~bitincounter[2:0]] <= bitin;
 
-        // read the 8 word bits
+        // read the 8 word bits, ptrdone indicates if wordptr is done
         end else if (ptrdone && (bitincounter < 8)) begin
           bitincounter <= bitincounter + 6'd1;
           readwords[~bitincounter[2:0]] <= bitin;
