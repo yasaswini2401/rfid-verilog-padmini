@@ -12,10 +12,10 @@
 // This should be moved to packetparse eventually.
 // (possibly along with the cmd parsing)
  
-module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_complete,
-                  m, trext, dr);
+module cmdparser (reset, clk, bitin, bitclk, cmd_out, packet_complete_out, cmd_complete,
+                  m, trext, dr, crc5invalid, crc16invalid);
   
-  input        reset, bitin, bitclk;
+  input        reset, clk, bitin, bitclk;
   output       packet_complete_out, cmd_complete;
   ///
   output [11:0] cmd_out;//12 diff commands
@@ -31,7 +31,24 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
   reg  [5:0] count;
   reg  [1:0] m;
   reg        trext, dr; // modulation settings from query
+  
+  
+  //crc5 checking  
+  reg crc5reset;
+  wire [4:0] crc5out;
+  output reg crc5invalid;
+  //module crc5(reset, crcinclk, crcbitin, crcout);
+  crc5 crc5check(crc5reset, bitclk, bitin, crc5out); 
+  
+  //crc16 checking
+  reg crc16reset;
+  wire [16:0] crc16out;
+  output reg crc16invalid;
+  //module crc16check(reset, crcinclk, crcbitin, crc);
+  crc16check  crc16c(crc16reset, bitclk, bitin, crc16out);
    
+    
+
   always @ (posedge bitclk or posedge reset) begin
     if(reset) begin
       count <= 0;
@@ -40,7 +57,18 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
       dr    <= 0;
       trext <= 0;
       packet_complete_out <= 0;
+      
+      //crc5
+      crc5reset         <= 1;
+      //crc16
+      crc16reset        <= 1;
+      
+      crc5invalid <= 0;
+      crc16invalid <= 0;
+    
+ 
     end else begin
+    
       cmd   <= new_cmd;
       count <= count + 6'd1;
       packet_complete_out <= packet_complete;  // clear up glitching?
@@ -49,8 +77,31 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
       if(cmd_out[2] && count == 5) m[1]  <= bitin;
       if(cmd_out[2] && count == 6) m[0]  <= bitin;
       if(cmd_out[2] && count == 7) trext <= bitin;
+      
+      crc5reset <= 0;
+      crc16reset <= 0;
+      
+      //crc checks
+      if(cmd_complete) begin
+        if(!cmd_out[2]) crc5reset <= 1;
+        
+        if(!(cmd_out[4] || cmd_out[11] || cmd_out[6] || cmd_out[7] || cmd_out[8])) crc16reset <= 1;
+      end
+      
+      if(packet_complete) begin
+        if(cmd_out[2]) begin
+            if(crc5out != 5'd0) crc5invalid <= 1;
+        end
+        
+        if((cmd_out[4] || cmd_out[11] || cmd_out[6] || cmd_out[7] || cmd_out[8])) begin
+            if(crc16out != 16'h1D0F) crc16invalid <= 1;
+        end
+      end
+      
     end
   end
+  
+
    
   
   assign cmd_complete = (cmd_out > 0);
@@ -64,7 +115,7 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
                             (cmd_out[4] && count >= 44) ||  // Select
                             (cmd_out[5] && count >= 7 ) ||  // Nack
                             (cmd_out[6] && count >= 39) ||  // ReqRN
-                            (cmd_out[7] && count >= 57) ||  // Read
+                            (cmd_out[7] && count >= 57) ||  // Read, 58 bits assuming 8 bit pointer
                             (cmd_out[8] && count >= 58))||   // Write
                             ///
                             (cmd_out[9] && count >= 13) ||   //trans added command 11011010 plus 6 bits
@@ -104,7 +155,3 @@ module cmdparser (reset, bitin, bitclk, cmd_out, packet_complete_out, cmd_comple
   
 
 endmodule
-
-  
-  
-    
