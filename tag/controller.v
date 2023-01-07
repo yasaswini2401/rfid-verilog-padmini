@@ -55,7 +55,8 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                    ///
                    plloff,
                    ////
-                   adc_sample);
+                   adc_sample, 
+                   crc5invalid, crc16invalid);
   
   parameter QUERYREP   = 12'b000000000001;
   parameter ACK        = 12'b000000000010;
@@ -96,6 +97,7 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
   output reg plloff;
   ///
   output reg adc_sample;
+  input crc5invalid, crc16invalid;
   
   
   
@@ -193,6 +195,7 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
       plloff <= 0;
       
     end else if (commstate == STATE_TX) begin
+        
       if(txsetupdone) begin
         rx_en <= 0;
       end
@@ -234,7 +237,7 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                  slotcounter <= newslotcounter; // new slot counter taken from the received data about Q, line 141. But slot is a random number anyway, just length has to be specified
                  
                  //same code that was used in queryrep, for when slot == 0
-                 if (comm_enable & (newslotcounter==0 | ~use_q)) begin // if the newslot counter, which wll be loaded into our slot counter after this clkedge over, turns 0
+                 if (comm_enable & (newslotcounter==0 | ~use_q) & ~crc5invalid) begin // if the newslot counter, which wll be loaded into our slot counter after this clkedge over, turns 0
                    commstate     <= STATE_TX;
                    bitsrcselect        <= bitsrcselect_RNG;
                    docrc         <= 0;
@@ -266,7 +269,7 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                  rx_en     <= 0;  // reset rx
            end
            REQRN: begin
-                 if (comm_enable && handlematch) begin
+                 if (comm_enable && handlematch && ~crc16invalid) begin
                    // First, request_RN opens tag then sets handle, which will be another random number
                    if (!tagisopen) begin
                      storedhandle <= currentrn;
@@ -281,7 +284,7 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                  end
            end
            READ: begin
-                 if (comm_enable && handlematch) begin
+                 if (comm_enable && handlematch && ~crc16invalid) begin
                    if (readwriteptr == 0) readfrommsp <= 0;
                    else                   readfrommsp <= 1;
                    commstate  <= STATE_TX;
