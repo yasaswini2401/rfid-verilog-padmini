@@ -1,4 +1,4 @@
-//modifications, iteration 1
+//modifications done
 
 
 
@@ -24,7 +24,7 @@ module cmdparser (reset, clk, bitin, bitclk, cmd_out, packet_complete_out, cmd_c
 
   reg        packet_complete_out;
   ///
-  wire [11:0] cmd_out;
+  wire [12:0] cmd_out;
   wire       packet_complete, cmd_complete;
   reg  [7:0] cmd;
   wire [7:0] new_cmd;
@@ -122,7 +122,8 @@ module cmdparser (reset, clk, bitin, bitclk, cmd_out, packet_complete_out, cmd_c
                             ////
                             (cmd_out[10] && count >= 26)||   //11011111, sample sensor data plus 3 bits plus crc16
                             /////
-                            (cmd_out[11] && count >= 43);  //read sensor data - 8+1+3+32 = 44
+                            (cmd_out[11] && count >= 43)||  //read sensor data - 8+1+3+32 = 44
+                            (cmd_out[12] && count >= 51);
                             
   
   
@@ -141,6 +142,8 @@ module cmdparser (reset, clk, bitin, bitclk, cmd_out, packet_complete_out, cmd_c
   assign cmd_out[10] = (count >= 8 &&  cmd[0] && cmd[1] && ~cmd[2] &&  cmd[6] &&  cmd[7] && cmd[3]); //11011111
   /////
   assign cmd_out[11] = (count >= 8 &&  cmd[0] && cmd[1] && ~cmd[2] && ~cmd[6] && ~cmd[7] && cmd[3]);//11011000
+  assign cmd_out[12] = (count >= 8 &&  cmd[0] && cmd[1] && ~cmd[2] &&  cmd[6] && ~cmd[7] && cmd[3]);//11011110 
+  
                  
                  
                             
@@ -155,3 +158,7 @@ module cmdparser (reset, clk, bitin, bitclk, cmd_out, packet_complete_out, cmd_c
   
 
 endmodule
+
+  
+  
+    
