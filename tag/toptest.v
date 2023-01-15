@@ -4,7 +4,6 @@
 // Module Name: toptest
 // Aditional comments:
 // Simulates query command. 
-//next to be simulated- ack
 //////////////////////////////////////////////////////////////////////////////////
 module toptest();
 
@@ -54,6 +53,7 @@ module toptest();
   reg [2158:0] bitsamp;
   ///// some reead sample data code
   wire morb_trans;
+  wire bfdur;
   //crc5
   wire crc5invalid, crc16invalid;
   wire bitout;
@@ -193,10 +193,29 @@ module toptest();
            pll_enable, freq_channel, rforbase,
            ////from sample data
            adc_sample, sensorcode,
-           morb_trans,
+           morb_trans, bf_dur,
            //crc checks
            crc5invalid, crc16invalid, bitout,
            preamble_indicator, calibration_control);
+           
+//(reset, clk, demodin, modout, // regular IO
+//           adc_sample_ctl, adc_sample_clk, adc_sample_datain,    // adc connections
+//           msp_sample_ctl, msp_sample_clk, msp_sample_datain, // msp430 connections
+//           uid_byte_in, uid_addr_out, uid_clk_out,
+//           writedataout, writedataclk, 
+//           use_uid, use_q, comm_enable,
+//           debug_clk, debug_out,
+//           rx_cmd,
+//           ///transmit clock
+//           pll_enable, freq_channel, rforbase,
+//           ////from sample data
+//           adc_sample, senscode,
+//           /////
+//           morb_trans, bf_dur,      
+//           crc5invalid, crc16invalid, bitout,
+//           preamble_indicator, calibration_control,
+//           //select
+//           sel_target, sel_action, sel_ptr, sel_masklen, mask, truncate)
 
 
 endmodule
