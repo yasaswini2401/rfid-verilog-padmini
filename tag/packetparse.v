@@ -35,15 +35,17 @@ module packetparse(reset, bitin, bitinclk, packettype, //inputs
                    pllenab, freq_channel, rfob,
                    //// for sample sens data
                    senscode,
-                   ///// for read sample data
+                   ///// for read sample data, bfconst also
                    morb_trans,
+                   //bfcnst commands, along with freq channel - using freq_chnanel from trns command
+                   bf_dur,
                    //select
-                   sel_target, sel_action, sel_bank, sel_ptr, sel_masklen, mask, masklendone);
+                   sel_target, sel_action, sel_ptr, sel_masklen, mask, truncate);
                    
 //7 inputs
 input reset, bitin, bitinclk;
 ///
-input [11:0]  packettype;
+input [12:0]  packettype;
 
 input [15:0] currenthandle;
 input [15:0] currentrn;
@@ -55,22 +57,23 @@ output [3:0] rx_q;
 output [2:0] rx_updn;
 
 ///
-output rfob;
-output pllenab;
-output [3:0] freq_channel;
+output reg rfob;
+output reg pllenab;
+output reg [3:0] freq_channel;
 ////
-output [2:0] senscode;
+output reg [2:0] senscode;
 /////
-output morb_trans; //main or backscatter transmitter
+output reg morb_trans; //main or backscatter transmitter
+output reg [7:0] bf_dur;
 
 //select command
-output [2:0] sel_target;
-output [2:0] sel_action;
-output [1:0] sel_bank;
-output [7:0] sel_ptr;
-output [7:0] sel_masklen;
-output [255: 0] mask;
-output       masklendone; 
+output reg [2:0] sel_target;
+output reg [2:0] sel_action;
+output reg [7:0] sel_ptr;
+output reg [7:0] sel_masklen;
+output reg [15: 0] mask;
+output reg     truncate; 
+reg masklendone;
 
 
 output [1:0] readwritebank; //which memory bank to read from, if read. or write to, if write
@@ -92,24 +95,8 @@ reg [7:0] readwords;
 reg writedataout;
 wire writedataclk;
 
-/// treat in same way as rx_q
-reg rfob;
-reg pllenab;
-reg [3:0] freq_channel;
-////
-reg [2:0] senscode;
-/////
-reg morb_trans;
-  
-//select command
-reg [2:0] sel_target;
-reg [2:0] sel_action;
-reg [1:0] sel_bank;
-reg [7:0] sel_ptr;
-reg [7:0] sel_masklen;
-reg [255: 0] mask;
-reg       masklendone; 
 
+ 
 
 //created registers
 
@@ -153,20 +140,20 @@ assign handlematchout = handlematch |
   
 //the 12 bit command names, rx_cmd or packettype
 ///
-  parameter QUERYREP   = 12'b000000000001;
-  parameter ACK        = 12'b000000000010;
-  parameter QUERY      = 12'b000000000100;
-  parameter QUERYADJ   = 12'b000000001000;
-  parameter SELECT     = 12'b000000010000;
-  parameter NACK       = 12'b000000100000;
-  
-  parameter REQRN      = 12'b000001000000;
-  parameter READ       = 12'b000010000000;
-  parameter WRITE      = 12'b000100000000;
-  ///
-  parameter TRNS       = 12'b001000000000;
-  parameter SAMPSENS   = 12'b010000000000;
-  parameter SENSDATA   = 12'b100000000000;
+  parameter QUERYREP   = 13'b0000000000001;
+  parameter ACK        = 13'b0000000000010;
+  parameter QUERY      = 13'b0000000000100;
+  parameter QUERYADJ   = 13'b0000000001000;
+  parameter SELECT     = 13'b0000000010000;
+  parameter NACK       = 13'b0000000100000;
+  parameter REQRN      = 13'b0000001000000;
+  parameter READ       = 13'b0000010000000;
+  parameter WRITE      = 13'b0000100000000;
+  ///                    
+  parameter TRNS       = 13'b0001000000000;
+  parameter SAMPSENS   = 13'b0010000000000;
+  parameter SENSDATA   = 13'b0100000000000;
+  parameter BFCONST    = 13'b1000000000000;
   
 
 // gate the write-data clk en to the negative edges
@@ -293,10 +280,10 @@ always @ (posedge bitinclk or posedge reset) begin
  //read in bank for select          
         end else if (!bankdone && (bitincounter == 0)) begin
             bitincounter <= bitincounter + 6'd1;
-            sel_bank[1] <= bitin;
+            readwritebank[1] <= bitin;
         end else if (!bankdone && (bitincounter == 1)) begin
             bitincounter <= 0;
-            sel_bank[0] <= bitin;
+            readwritebank[0] <= bitin;
             bankdone <= 1;
 //read in pointer, bit pointer not word pointer            
         end else if (!ebvdone && (bitincounter == 0)) begin
@@ -331,8 +318,21 @@ always @ (posedge bitinclk or posedge reset) begin
                   masklendone <= 1;
               end
               else bitincounter <= bitincounter + 6'd1;
+//now comes the mask, 16 bits assume fixed length for now              
         end else if( masklendone && (bitincounter ==0)) begin
-            
+              bitincounter <= bitincounter + 6'd1;
+              mask[~bitincounter[3:0]] <= bitin;
+        end else if( bitincounter == 15) begin
+              bitincounter <= bitincounter + 6'd1;
+              truncate <= bitin;              
+//handlematch              
+        end else if (!matchfailed && !lastbit && thisbitmatches) begin
+          handlebitcounter <= handlebitcounter + 4'd1;
+        // check the last bit
+        end else if (!matchfailed && lastbit && thisbitmatches) begin
+          handlematch <= 1;
+        end else if (!handlematch) begin
+          matchfailed <= 1;
         end
         
       end
@@ -529,6 +529,34 @@ always @ (posedge bitinclk or posedge reset) begin
               matchfailed <= 1;
             end 
             
+      end
+      BFCONST: begin
+            if (bitincounter == 0) begin
+                  bitincounter <= bitincounter + 6'd1;
+                  freq_channel[3] <= bitin;
+            end else if (bitincounter == 1) begin
+                  bitincounter <= bitincounter + 6'd1;
+                  freq_channel[2] <= bitin;
+            end else if (bitincounter == 2) begin
+                  bitincounter <= bitincounter + 6'd1;
+                  freq_channel[1] <= bitin;
+            end else if (bitincounter == 3) begin
+                  bitincounter <= bitincounter + 6'd1;
+                  freq_channel[0] <= bitin;
+            end else if (bitincounter >= 4 && bitincounter <= 11) begin
+                bitincounter <= bitincounter + 6'd1;                
+                bf_dur[11 - bitincounter] <= bitin;
+                
+                            
+            // check the first and middle bits of the handle, for rn16
+            end else if (!matchfailed && !lastbit && thisbitmatches) begin
+              handlebitcounter <= handlebitcounter + 4'd1;
+            // check the last bit
+            end else if (!matchfailed && lastbit && thisbitmatches) begin
+              handlematch <= 1;
+            end else if (!handlematch) begin
+              matchfailed <= 1;
+            end 
       end
       default begin // do nothing. 
         // either cmd is not yet received or we don't need to check handle.
