@@ -58,19 +58,20 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                    adc_sample, 
                    crc5invalid, crc16invalid);
   
-  parameter QUERYREP   = 12'b000000000001;
-  parameter ACK        = 12'b000000000010;
-  parameter QUERY      = 12'b000000000100;
-  parameter QUERYADJ   = 12'b000000001000;
-  parameter SELECT     = 12'b000000010000;
-  parameter NACK       = 12'b000000100000;
-  parameter REQRN      = 12'b000001000000;
-  parameter READ       = 12'b000010000000;
-  parameter WRITE      = 12'b000100000000;
+  parameter QUERYREP   = 13'b0000000000001;
+  parameter ACK        = 13'b0000000000010;
+  parameter QUERY      = 13'b0000000000100;
+  parameter QUERYADJ   = 13'b0000000001000;
+  parameter SELECT     = 13'b0000000010000;
+  parameter NACK       = 13'b0000000100000;
+  parameter REQRN      = 13'b0000001000000;
+  parameter READ       = 13'b0000010000000;
+  parameter WRITE      = 13'b0000100000000;
   ///for transmitter wake up bit addition, need to add another bit
-  parameter TRNS       = 12'b001000000000;
-  parameter SAMPSENS   = 12'b010000000000;
-  parameter SENSDATA   = 12'b100000000000;
+  parameter TRNS       = 13'b0001000000000;
+  parameter SAMPSENS   = 13'b0010000000000;
+  parameter SENSDATA   = 13'b0100000000000;
+  parameter BFCONST    = 13'b1000000000000;
 
   parameter bitsrcselect_RNG = 2'd0;
   parameter bitsrcselect_EPC = 2'd1;
@@ -81,7 +82,7 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
   parameter pll_dur = 150; 
    
   input reset, clk, rx_overflow, packet_complete, txsetupdone, tx_done;
-  input [11:0] rx_cmd;
+  input [12:0] rx_cmd;
   input [15:0]  currentrn;
   output [15:0] currenthandle;
   output rx_en, tx_en, docrc; // current_mode 0: rx mode, 1: tx mode
@@ -324,6 +325,10 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                 end else begin
                    rx_en <= 0;  // reset rx
                 end
+           end
+           BFCONST: begin
+                tagisopen  <= 0;
+                rx_en <= 0;
            end
           default begin
              rx_en <= 0;  // reset rx
