@@ -36,7 +36,9 @@ module top(reset, clk, demodin, modout, // regular IO
            ////from sample data
            adc_sample, senscode,
            /////
-           morb_trans,
+           morb_trans, bf_dur,
+           //select
+           sel_target, sel_action, sel_ptr, sel_masklen, mask, truncate,
            crc5invalid, crc16invalid, bitout,
            preamble_indicator, calibration_control);
 
@@ -68,73 +70,63 @@ module top(reset, clk, demodin, modout, // regular IO
   input  debug_clk;
   output debug_out;
   
-  ///transmit clock command
-  output pll_enable; /// final control for pll
-  output [3:0] freq_channel;
-  output rforbase;
+/**********Additional commands**********/
   
-  ////
-  output [2:0] senscode;
-  output adc_sample;
-  /////
-  output morb_trans;
-  //crc5
+  /// trns: transmit clock command, all connected to packetparse module
+  output wire pll_enable; /// final control for pll
+  output wire [3:0] freq_channel;
+  output wire rforbase;
+  //// sampsens: wilo router asks tag to sample data
+  output wire [2:0] senscode;
+  output wire adc_sample;
+  ///// sensdata: wilo router asks for sensor data
+  output wire morb_trans; //main or backscatter transmitter
+  /// bfconst: ask tag to backscatter at constant frequency
+  //output wire freq
+  output wire [7:0] bf_dur;
+  
+  //for select: sel_target, sel_action, sel_ptr, sel_masklen, mask, truncate
+  output wire [2:0] sel_target;
+  output wire [2:0] sel_action;
+  output wire [7:0] sel_ptr;
+  output wire [7:0] sel_masklen;
+  output wire [15: 0] mask;
+  output wire     truncate; 
+  
+  //crc5 and crc16 checks
   output crc5invalid, crc16invalid;
   
-  output wire preamble_indicator;
-  output wire calibration_control;
+  //clock recovery circuit signals
+  output preamble_indicator;
+  output calibration_control;
+  output bitout;
   
-  reg ext_packetcomplete;
-  
-  
-
-  
-
+/********************Module connections********************/
+   
   // CONTROLLER module connections
   wire rx_en, tx_en, docrc;
   wire [15:0] currentrn;     // current rn
   wire [15:0] currenthandle; // current handle
-  wire plloff;  
-  wire adc_sample;
+  wire plloff; // driven to turn off pll, for a specific amount of clock cycles
 
   // RX module connections
   wire rx_reset, rxtop_reset, bitclk;
-  output wire bitout;
+  wire bitout;
   wire rx_overflow;
 
   // PACKET PARSE module connections
   wire       handlematch;
   wire [1:0] readwritebank;//use for read, write, select
-  wire [7:0] readwriteptr;
-  wire [7:0] readwords;
-  wire       writedataout, writedataclk;
-  wire [3:0] rx_q;
-  wire [2:0] rx_updn;
-  ///
-  wire pllenab;
-  wire [3:0] freq_channel;
-  wire rforbase;
-  ////
-  wire [2:0] senscode;
-  /////
-  wire morb_trans;
-  //for select: extra wires to send to the memory module:
-  wire [2:0] sel_target;
-  wire [2:0] sel_action;
-  wire [1:0] sel_bank;
-  wire [7:0] sel_ptr;
-  wire [7:0] sel_masklen;
-  
-  
-  
-  
-  
-  
-  
+  wire [7:0] readwriteptr; //read write
+  wire [7:0] readwords; //read
+  wire       writedataout, writedataclk; //write
+  wire [3:0] rx_q;//query
+  wire [2:0] rx_updn;//queryadj
+   
 
   // CMDPARSE module connections
   wire packet_complete, cmd_complete;
-  output wire [11:0] rx_cmd;
+  output wire [12:0] rx_cmd;
       //crc5, crc16 checks
       wire crc5invalid, crc16invalid;
 
@@ -148,7 +140,7 @@ module top(reset, clk, demodin, modout, // regular IO
   wire [9:0] trcal_in, trcal_out;
 
   // Signal to tx settings module to store TR modulation settings.
-  parameter QUERY = 10'b000000100;
+  parameter QUERY = 13'b000000000100;
   wire query_complete;
   assign query_complete = packet_complete && (rx_cmd==QUERY);
 
@@ -159,17 +151,16 @@ module top(reset, clk, demodin, modout, // regular IO
 
   // TX module connections
   wire txbitclk, txbitsrc, txdatadone;
-  
-  
-  
+/*************************************************************/  
+
   // RX and TX module reset signals
   assign tx_reset    = reset | !tx_en; // transmission is not allowed if crc5 is invalid
   assign rx_reset    = reset | !rx_en;
   assign rxtop_reset = reset | !rx_en;
   
-  ///
+  /// this is for trns command
   //mux control for pll on and off
-  
+  wire pllenab;
   assign pll_enable = (pllenab) & (~plloff);
 
   // mux control for transmit data source
@@ -207,6 +198,7 @@ module top(reset, clk, demodin, modout, // regular IO
   assign readbitclk = (bitsrcselect == BITSRC_READ) ? txbitclk : 1'b0;
   assign uidbitclk  = (bitsrcselect == BITSRC_UID ) ? txbitclk : 1'b0;
 
+/*************Connections we don't need- adc or msp340************/
   // MUX connection from READ to MSP or ADC
   wire readfrommsp;
   wire readfromadc = !readfrommsp;
@@ -221,6 +213,8 @@ module top(reset, clk, demodin, modout, // regular IO
   assign msp_sample_clk     = read_sample_clk    & readfrommsp;
 
   assign read_sample_datain = readfromadc ? adc_sample_datain : msp_sample_datain;
+/*******************************************************************/
+
 
   // Serial debug interface for viewing registers:
   reg [3:0] debug_address;
@@ -255,6 +249,8 @@ module top(reset, clk, demodin, modout, // regular IO
   endcase
   end
   
+//for cdr circuit
+  reg ext_packetcomplete;
   assign calibration_control = ~(ext_packetcomplete);
   
   always@(posedge packet_complete or posedge preamble_indicator) begin
@@ -263,7 +259,7 @@ module top(reset, clk, demodin, modout, // regular IO
     end else ext_packetcomplete <= 0;
   end
 
-  // MODULES! :)
+/******************** MODULES! :)********************/
 
   controller U_CTL (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                     packet_complete, txsetupdone, tx_done, 
@@ -282,18 +278,21 @@ module top(reset, clk, demodin, modout, // regular IO
   rx        U_RX  (rx_reset, clk, demodin, bitout, bitclk, rx_overflow, trcal_in, rngbitin, preamble_indicator);
   
   cmdparser U_CMD (rxtop_reset, clk, bitout, bitclk, rx_cmd, packet_complete, cmd_complete,
-                   m_in, trext_in, dr_in,crc5invalid,crc16invalid );
+                   m_in, trext_in, dr_in, crc5invalid, crc16invalid );
 
   packetparse U_PRSE (rx_reset, bitout, bitclk, rx_cmd, rx_q, rx_updn,
                       currenthandle, currentrn, handlematch,
                       readwritebank, readwriteptr, readwords,
                       writedataout, writedataclk,
-                      ///
+                      /// trns
                       pllenab, freq_channel,rforbase,
-                      ////
+                      //// sampsens
                       senscode,
-                      /////,
-                      morb_trans);
+                      ///// sensdata
+                      morb_trans,
+                      // bfconst 
+                      bf_dur,
+                      sel_target, sel_action, sel_ptr, sel_masklen, mask, truncate);
 
   rng       U_RNG  (tx_reset, reset, rngbitin, rngbitinclk, rngbitclk, rngbitsrc, rngdatadone, currentrn);
   
