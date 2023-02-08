@@ -1,3 +1,5 @@
+//with modifications
+
 
 // RX
 // Copyright 2010 University of Washington
@@ -12,17 +14,18 @@
 // RT cal for debugging purposes and possibly adjustment
 //   of oscillator frequency if necessary.
 
-module rx (reset, clk, demodin, bitout, bitclk, rx_overflow_reset, trcal, rngbitout);
+module rx (reset, clk, demodin, bitout, bitclk, rx_overflow_reset, trcal, rngbitout, preamble_indicator);
 
   input reset, clk, demodin;
   output bitout, bitclk, rx_overflow_reset, rngbitout;
   output [9:0] trcal;
+  output reg preamble_indicator;
 
   reg bitout, bitclk, rngbitout;
   reg [9:0] trcal, rtcal;
 
-  // States, first 4 are for preamble; state_bits for getting bits.
-  parameter STATE_DELIMITER = 5'd0;
+  // States, first 4 are for preamble; state_bits for getting bits of the command
+  parameter STATE_DELIMITER = 5'd0; // not using now, since powering up while inside delimiter and waiting for data zero
   parameter STATE_DATA0     = 5'd1;
   parameter STATE_RTCAL     = 5'd2;
   parameter STATE_TRCAL     = 5'd4;
@@ -63,17 +66,23 @@ if( reset ) begin
     rngbitout     <= 0;
     counterreset  <= 0;
     counterenable <= 0;
-    commstate <= STATE_DELIMITER; // initially looking for delimiter
-    evalstate <= STATE_WAIT_DEMOD_LOW; // waiting to get a low, which is the delimiter. By default in high state if no data coming in
-
+    commstate <= STATE_DELIMITER; //will be in delimiter state initially
+    evalstate <= STATE_WAIT_DEMOD_LOW; 
+    
+    preamble_indicator <= 0;
 // process normal operation
 end else begin
 
   if(evalstate == STATE_WAIT_DEMOD_LOW) begin
-    if (demodin == 0) begin
+    if (demodin == 0) begin //detect a low
       evalstate <= STATE_WAIT_DEMOD_HIGH; //now that we got low (demodin =0), we will be waiting for a high next
       if(commstate != STATE_DELIMITER) counterenable <= 1; // counter is for checking length, and length checked for everything but the delimiter
-      else                             counterenable <= 0;
+      else begin
+        counterenable <= 0;
+        ///
+        preamble_indicator <= 1;
+      end
+      
       counterreset <= 0;
     end
 
@@ -83,6 +92,7 @@ end else begin
       counterenable <= 1; // counter enabled here
       counterreset  <= 0; // next bits eval so counter has to be reset, but in the next clock cycle
     end
+    
     
   //reset the counter at every rising edge of demodin, clear the bit clock too (Bit clock = rising edges of Demodin)
 //wherever rising edge, bit must be evaluated   
@@ -104,6 +114,8 @@ end else begin
         commstate <= STATE_TRCAL;
       end
       STATE_TRCAL: begin
+        preamble_indicator <= 0;
+        
         if(count > rtcal) begin
           trcal  <= count;
         end else if(count[8:0] > rtcal[9:1]) begin // divide rtcal by 2
