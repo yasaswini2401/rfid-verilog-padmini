@@ -85,5 +85,3 @@ always @ (posedge crcinclk or posedge reset or negedge reset) begin
 end // always
 
 endmodule
-
-
