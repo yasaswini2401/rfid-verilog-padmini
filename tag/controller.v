@@ -33,7 +33,7 @@
 //    This feature is enabled via the use_q input.
 //    EPC spec - see Annex J
 //    
-// 3. Unique ID
+// 3. Unique ID, removed
 //    Tags should have unique ID's (uid).  However, the UID
 //    should not change in time unless the reader rewrites the ID.
 //    Ying's ID generator has unstable bits, which violates SPEC
@@ -51,12 +51,12 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
                    packet_complete, txsetupdone, tx_done, 
                    rx_en, tx_en, docrc, handlematch,
                    bitsrcselect, readfrommsp, readwriteptr, rx_q, rx_updn,
-                   use_uid, use_q, comm_enable,
+                   use_q, comm_enable,
                    ///
                    plloff,
                    ////
                    adc_sample, 
-                   crc5invalid, crc16invalid);
+                   crc5invalid, crc16invalid, sel, sl_flag);
   
   parameter QUERYREP   = 13'b0000000000001;
   parameter ACK        = 13'b0000000000010;
@@ -89,7 +89,7 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
   output [1:0] bitsrcselect;
   input [7:0] readwriteptr;
   output readfrommsp;
-  input use_uid, use_q;
+  input use_q;
   input [3:0] rx_q;
   input [2:0] rx_updn;
   input handlematch, comm_enable;
@@ -99,6 +99,11 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
   ///
   output reg adc_sample;
   input crc5invalid, crc16invalid;
+  
+  //select functionality
+  input [1:0] sel;
+  input sl_flag;
+  
   
   
   
@@ -207,140 +212,145 @@ module controller (reset, clk, rx_overflow, rx_cmd, currentrn, currenthandle,
         tx_en <= 1;
       end
     end else if (commstate == STATE_RX) begin  // rx mode, where we finally make sense of the data
-        if(packet_complete) begin
-          case (rx_cmd) //switch case to see which command received
-           QUERYREP: begin
-                 tagisopen   <= 0; // close tag since we're processing data
-                 slotcounter <= slotcounter - 15'd1; // function of query rep is to decrement slot counter, so self explanatory. happens after the always block done - nba
-                 if (comm_enable & ((slotcounter-15'd1)==0 | ~use_q)) begin // if slot counter finally 0 after this clk edge (or) direct signal to use_q --> check added feature no. 2
-                   commstate     <= STATE_TX; // must transmit RN16 after slot counter reaches 0
-                   // next is basically command output to tell tag that data being transmitted is rn. bitsrcselect_RNG is the mux control to the transmitter block.
-                   bitsrcselect        <= bitsrcselect_RNG;              
-                   docrc         <= 0;// since a rn is being sent anyway, crc16 not needed?
-                 end else begin
-                   rx_en <= 0;  // reset rx, await next command
-                 end
-           end
-           ACK: begin
-                 tagisopen <= 0;
-                 if (comm_enable && handlematch) begin
-                   commstate <= STATE_TX; // send ack.
-                   bitsrcselect    <= use_uid ? bitsrcselect_UID : bitsrcselect_EPC;// whoaaaa now send epc, unless specified to send the tag uid. check added point 3
-                   docrc     <= 1;// since we're sending epc
-                 end else begin
-                 rx_en <= 0;  // reset rx, same principle
-                 end
-           end
-           QUERY: begin
-                 tagisopen <= 0;
-                 rx_q_reg  <= rx_q; //they're the same, but the reg is it's actual memory
-                 // load slot counter
-                 slotcounter <= newslotcounter; // new slot counter taken from the received data about Q, line 141. But slot is a random number anyway, just length has to be specified
-                 
-                 //same code that was used in queryrep, for when slot == 0
-                 if (comm_enable & (newslotcounter==0 | ~use_q) & ~crc5invalid) begin // if the newslot counter, which wll be loaded into our slot counter after this clkedge over, turns 0
-                   commstate     <= STATE_TX;
-                   bitsrcselect        <= bitsrcselect_RNG;
-                   docrc         <= 0;
-                 end else begin
-                   rx_en <= 0;  // reset rx
-                 end
-           end
-           QUERYADJ: begin
-                 tagisopen <= 0;
-                 rx_q_reg  <= q_adj; // change q value
-                 // load slot counter
-                 slotcounter <= newslotcounter; // by then slot counter mask will change, so new slot counter will be updated with new length rn
-                 
-                 //same code that was used in queryrep, for when slot == 0
-                 if (comm_enable & (newslotcounter==0 | ~use_q)) begin
-                   commstate     <= STATE_TX;
-                   bitsrcselect        <= bitsrcselect_RNG;
-                   docrc         <= 0;
-                 end else begin
-                   rx_en <= 0;  // reset rx
-                 end
-           end
-           SELECT: begin
-                 tagisopen <= 0;
-                 rx_en <= 0;  // reset rx
-           end
-           NACK: begin
-                 tagisopen <= 0;
-                 rx_en     <= 0;  // reset rx
-           end
-           REQRN: begin
-                 if (comm_enable && handlematch && ~crc16invalid) begin
-                   // First, request_RN opens tag then sets handle, which will be another random number
-                   if (!tagisopen) begin
-                     storedhandle <= currentrn;
-                     tagisopen    <= 1;
-                   end
+        if ((sel == 2'b11 && sl_flag) || (sel == 2'b10 && ~sl_flag) || (sel == 2'b00) || (sel == 2'b01)) begin
+            if(packet_complete) begin
+              case (rx_cmd) //switch case to see which command received
+                QUERYREP: begin
+                      tagisopen   <= 0; // close tag since we're processing data
+                      slotcounter <= slotcounter - 15'd1; // function of query rep is to decrement slot counter, so self explanatory. happens after the always block done - nba
+                      
+                      if (comm_enable & ((slotcounter-15'd1)==0 | ~use_q)) begin // if slot counter finally 0 after this clk edge (or) direct signal to use_q --> check added feature no. 2
+                          commstate     <= STATE_TX; // must transmit RN16 after slot counter reaches 0
+                         // next is basically command output to tell tag that data being transmitted is rn. bitsrcselect_RNG is the mux control to the transmitter block.
+                         bitsrcselect        <= bitsrcselect_RNG;              
+                         docrc         <= 0;// since a rn is being sent anyway, crc16 not needed?
+                      end else begin
+                          rx_en <= 0;  // reset rx, await next command
+                      end
+                end
+                ACK: begin
+                      tagisopen <= 0;
+                      if (comm_enable && handlematch) begin
+                        commstate <= STATE_TX; // send epc.
+                        bitsrcselect    <= bitsrcselect_EPC;// whoaaaa now send epc, unless specified to send the tag uid. check added point 3
+                        docrc     <= 1;// since we're sending epc
+                      end else begin
+                      rx_en <= 0;  // reset rx, same principle
+                      end
+                end
+                QUERY: begin
+                      tagisopen <= 0;
+                      rx_q_reg  <= rx_q; //they're the same, but the reg is it's actual memory
+                      // load slot counter
+                      slotcounter <= newslotcounter; // new slot counter taken from the received data about Q, line 141. But slot is a random number anyway, just length has to be specified
+                      
+                      //same code that was used in queryrep, for when slot == 0
+                      if (comm_enable & (newslotcounter==0 | ~use_q) & ~crc5invalid) begin // if the newslot counter, which wll be loaded into our slot counter after this clkedge over, turns 0
+                        commstate     <= STATE_TX;
+                        bitsrcselect        <= bitsrcselect_RNG;
+                        docrc         <= 0;
+                      end else begin
+                        rx_en <= 0;  // reset rx
+                      end
+                end
+                QUERYADJ: begin
+                      tagisopen <= 0;
+                      rx_q_reg  <= q_adj; // change q value
+                      // load slot counter
+                      slotcounter <= newslotcounter; // by then slot counter mask will change, so new slot counter will be updated with new length rn
+                      
+                      //same code that was used in queryrep, for when slot == 0
+                      if (comm_enable & (newslotcounter==0 | ~use_q)) begin
+                        commstate     <= STATE_TX;
+                        bitsrcselect        <= bitsrcselect_RNG;
+                        docrc         <= 0;
+                      end else begin
+                        rx_en <= 0;  // reset rx
+                      end
+                end
+                SELECT: begin
+                      tagisopen <= 0;
+                      rx_en <= 0;  // reset rx
+                end
+                NACK: begin
+                      tagisopen <= 0;
+                      rx_en     <= 0;  // reset rx
+                end
+                REQRN: begin
+                      if (comm_enable && handlematch && ~crc16invalid) begin
+                        // First, request_RN opens tag then sets handle, which will be another random number
+                        if (!tagisopen) begin
+                          storedhandle <= currentrn;
+                          tagisopen    <= 1;
+                        end
     
-                   commstate <= STATE_TX; 
-                   bitsrcselect    <= bitsrcselect_RNG;// because need to tx rn
-                   docrc     <= 1;
-                 end else begin
-                   rx_en <= 0;  // reset rx
-                 end
-           end
-           READ: begin
-                 if (comm_enable && handlematch && ~crc16invalid) begin
-                   if (readwriteptr == 0) readfrommsp <= 0;
-                   else                   readfrommsp <= 1;
-                   commstate  <= STATE_TX;
-                   bitsrcselect     <= bitsrcselect_ADC;
-                   docrc      <= 1;
-                 end else begin
-                   rx_en <= 0;  // reset rx
-                 end
-           end
-           WRITE: begin
-                 rx_en <= 0;  // reset rx
-           end
-           ///
-           TRNS: begin
-                tagisopen   <= 0;
-                
-                //turn off calibration bit after 100us. Some parameter pll_dur for no of clk cycles that equate upto 100us
-                if(pllwaitcount >= pll_dur) begin
-                    plloff <= 1;
-                    pllwaitcount <= 0;
-                    rx_en <= 0;
-                end else begin
-                    pllwaitcount <= pllwaitcount + 10'd1;
+                        commstate <= STATE_TX; 
+                        bitsrcselect    <= bitsrcselect_RNG;// because need to tx rn
+                        docrc     <= 1;
+                      end else begin
+                        rx_en <= 0;  // reset rx
+                      end
                 end
-           end
-           SAMPSENS: begin
-                tagisopen   <= 0;
-                //want to send a bit high to the adc to sample data, adc_sample
-                adc_sample  <= 1;
-                rx_en <= 0;
-           end
-           SENSDATA: begin
-                if (comm_enable && handlematch) begin
-                   commstate  <= STATE_TX;
-                   bitsrcselect     <= bitsrcselect_ADC;
-                   docrc      <= 1;
-                end else begin
+                READ: begin
+                      if (comm_enable && handlematch && ~crc16invalid) begin
+                        if (readwriteptr == 0) readfrommsp <= 0;
+                        else                   readfrommsp <= 1;
+                        commstate  <= STATE_TX;
+                        bitsrcselect     <= bitsrcselect_ADC;
+                        docrc      <= 1;
+                      end else begin
+                        rx_en <= 0;  // reset rx
+                      end
+                end
+                WRITE: begin
+                      rx_en <= 0;  // reset rx
+                end
+                ///
+                TRNS: begin
+                     tagisopen   <= 0;
+                     
+                     //turn off calibration bit after 100us. Some parameter pll_dur for no of clk cycles that equate upto 100us
+                     if(pllwaitcount >= pll_dur) begin
+                         plloff <= 1;
+                         pllwaitcount <= 0;
+                         rx_en <= 0;
+                     end else begin
+                         pllwaitcount <= pllwaitcount + 10'd1;
+                     end
+                end
+                SAMPSENS: begin
+                     tagisopen   <= 0;
+                     //want to send a bit high to the adc to sample data, adc_sample
+                     adc_sample  <= 1;
+                     rx_en <= 0;
+                end
+                SENSDATA: begin
+                     if (comm_enable && handlematch) begin
+                        commstate  <= STATE_TX;
+                        bitsrcselect     <= bitsrcselect_ADC;
+                        docrc      <= 1;
+                     end else begin
+                        rx_en <= 0;  // reset rx
+                     end
+                end
+                BFCONST: begin
+                     tagisopen  <= 0;
+                     rx_en <= 0;
+                end
+                default begin
                    rx_en <= 0;  // reset rx
                 end
-           end
-           BFCONST: begin
-                tagisopen  <= 0;
-                rx_en <= 0;
-           end
-          default begin
-             rx_en <= 0;  // reset rx
-          end
-          endcase
-        end else if(rx_overflow) begin
-          rx_en <= 0;
+              endcase
+            end else if(rx_overflow) begin
+              rx_en <= 0;
+            end else begin
+              rx_en <= 1;
+              tx_en <= 0;
+            end // if packetcomplete
         end else begin
-          rx_en <= 1;
-          tx_en <= 0;
-        end
-      end
-    end
+            rx_en <= 0;
+        end// sel checking
+    end //reset
+  end//always
 endmodule
 
