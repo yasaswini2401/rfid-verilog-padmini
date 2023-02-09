@@ -1,4 +1,4 @@
-//modifications done
+//modifications, iteration 1
 
 
 
@@ -18,7 +18,7 @@ module cmdparser (reset, clk, bitin, bitclk, cmd_out, packet_complete_out, cmd_c
   input        reset, clk, bitin, bitclk;
   output       packet_complete_out, cmd_complete;
   ///
-  output [11:0] cmd_out;//12 diff commands
+  output [12:0] cmd_out;//12 diff commands
   output [1:0] m;
   output       trext, dr;
 
@@ -122,8 +122,8 @@ module cmdparser (reset, clk, bitin, bitclk, cmd_out, packet_complete_out, cmd_c
                             ////
                             (cmd_out[10] && count >= 26)||   //11011111, sample sensor data plus 3 bits plus crc16
                             /////
-                            (cmd_out[11] && count >= 43)||  //read sensor data - 8+1+3+32 = 44
-                            (cmd_out[12] && count >= 51);
+                            (cmd_out[11] && count >= 51)||  //read sensor data - 8+1+3+8+32 = 52
+                            (cmd_out[12] && count >= 51); // bfconst
                             
   
   
