@@ -27,7 +27,7 @@
 // todo: Data decoding for write.
 
 module packetparse(reset, bitin, bitinclk, packettype, //inputs
-                   rx_q, rx_updn,
+                   rx_q, sel, rx_updn,
                    currenthandle, currentrn, //inputs as well
                    handlematch, readwritebank, readwriteptr, readwords,
                    writedataout, writedataclk,
@@ -36,11 +36,11 @@ module packetparse(reset, bitin, bitinclk, packettype, //inputs
                    //// for sample sens data
                    senscode,
                    ///// for read sample data, bfconst also
-                   morb_trans,
+                   morb_trans, time_stamp,
                    //bfcnst commands, along with freq channel - using freq_chnanel from trns command
                    bf_dur,
                    //select
-                   sel_target, sel_action, sel_ptr, sel_masklen, mask, truncate);
+                   sel_target, sel_action, sel_ptr, mask, truncate);
                    
 //7 inputs
 input reset, bitin, bitinclk;
@@ -54,6 +54,7 @@ input [15:0] currentrn;
 //outputs
 output handlematch;
 output [3:0] rx_q;
+output [1:0] sel;
 output [2:0] rx_updn;
 
 ///
@@ -64,13 +65,14 @@ output reg [3:0] freq_channel;
 output reg [2:0] senscode;
 /////
 output reg morb_trans; //main or backscatter transmitter
+output reg [7:0] time_stamp;
 output reg [7:0] bf_dur;
 
 //select command
 output reg [2:0] sel_target;
 output reg [2:0] sel_action;
 output reg [7:0] sel_ptr;
-output reg [7:0] sel_masklen;
+//output reg [7:0] sel_masklen;
 output reg [15: 0] mask;
 output reg     truncate; 
 reg masklendone;
@@ -79,7 +81,8 @@ reg masklendone;
 output [1:0] readwritebank; //which memory bank to read from, if read. or write to, if write
 output [7:0] readwriteptr; //first word pointer
 output [7:0] readwords;//number of words to read
-output writedataout, writedataclk; //parses the write data, which is included in the packet, if its a write command
+output [15:0] writedataout; 
+output writedataclk; //parses the write data, which is included in the packet, if its a write command
 
 //*//crc check bit - 1 if crc checks out
 //for crc5 - query, rest all crc16. Say checking for req_rn first
@@ -87,12 +90,13 @@ output writedataout, writedataclk; //parses the write data, which is included in
 //op registers or wires
 reg       handlematch;
 reg [3:0] rx_q;
+reg [1:0] sel;
 reg [2:0] rx_updn;
 reg [1:0] readwritebank;
 reg [7:0] readwriteptr;
 reg [7:0] readwords;
   
-reg writedataout;
+reg [15:0] writedataout;
 wire writedataclk;
 
 
@@ -105,12 +109,13 @@ reg [5:0] bitincounter; // 6 bit counter
 reg       matchfailed;
 
 //read and write, select
-reg       writedataen;
+reg       writedataen;// on while write data is being parsed
 reg       writedataengated;
 reg       bankdone;
 reg       ptrdone;
 reg       ebvdone;
 reg       datadone;
+reg       seldone;
        
 
  
@@ -180,11 +185,13 @@ always @ (posedge bitinclk or posedge reset) begin
     ebvdone          <= 0;
     datadone         <= 0;
     masklendone      <= 0;
+    seldone          <= 0;
 
     writedataen      <= 0;
     writedataout     <= 0;
   //for query, query adj
     rx_q             <= 4'd0;
+    sel              <= 2'd0;
     rx_updn          <= 3'd0;
 //read and write
     readwritebank    <= 2'd0;
@@ -196,8 +203,16 @@ always @ (posedge bitinclk or posedge reset) begin
     rfob             <= 0; //by default will be either baseband or transmitter frequency
     ////
     senscode         <= 3'd0; //sensor code
-    
-
+    /////
+    time_stamp       <= 8'd0;
+    morb_trans       <= 1'b0;
+    bf_dur           <= 8'd0;
+    sel_target       <= 3'd0;
+    sel_action       <= 3'd0;
+    sel_ptr          <= 8'd0;
+    //sel_masklen      <= 8'd0;
+    mask             <= 16'd0;
+    truncate         <= 1'd0;
 // check for read, write, req_rn, ack
   end else begin
     case(packettype)
@@ -205,8 +220,18 @@ always @ (posedge bitinclk or posedge reset) begin
         //basically, first 8 bits are already read. ptr is just to indicate that 8 bit word was read.
         //Also, 4 bits have already been pushed into packet parser, but packettype had not beenreceived by then
         //So, thats where first 4 bits are going
-        if (!ptrdone) begin
-          if (bitincounter >= 8) begin  // ptr done, bit counter is for 9 bits long(0 to 8)
+        if(!seldone) begin
+            if(bitincounter ==0 ) begin
+                bitincounter <= bitincounter + 6'd1;
+                sel[1] <= bitin;
+            end else if (bitincounter ==1) begin
+                bitincounter <= 0;
+                sel[0] <= bitin;
+                seldone <= 1;
+            end
+        end 
+        else if (!ptrdone) begin
+          if (bitincounter >= 6) begin  // ptr done, bit counter is for 9 bits long(0 to 8)
             ptrdone      <= 1;
             bitincounter <= 0;
           end else begin
@@ -310,9 +335,8 @@ always @ (posedge bitinclk or posedge reset) begin
               end
               readwriteptr[~bitincounter[2:0]] <= bitin;
           
-        end else if (!masklendone && (bitincounter < 8)) begin
-              sel_masklen[~bitincounter[2:0]] <= bitin;
-              
+        end else if (!masklendone && (bitincounter < 8)) begin //skip over
+              //sel_masklen[~bitincounter[2:0]] <= bitin;
               if(bitincounter == 7) begin 
                   bitincounter <= 0;
                   masklendone <= 1;
@@ -443,8 +467,8 @@ always @ (posedge bitinclk or posedge reset) begin
             end else begin
                 bitincounter <= bitincounter + 6'd1;
             end
-            
-            writedataout <= bitin ^ currentrn[~bitincounter[3:0]];
+            //made it parallel
+            writedataout[~bitincounter[3:0]] <= bitin ^ currentrn[~bitincounter[3:0]];
             
         // check the first and middle bits of the handle
         end else if (!matchfailed && !lastbit && thisbitmatches) begin
@@ -519,6 +543,9 @@ always @ (posedge bitinclk or posedge reset) begin
             end else if (bitincounter == 3) begin
                   bitincounter <= bitincounter + 6'd1;
                   senscode[0] <= bitin;
+            end else if (bitincounter >= 4 && bitincounter <= 11) begin
+                  bitincounter <= bitincounter + 6'd1;
+                  time_stamp[11-bitincounter] <= bitin;      
             // check the first and middle bits of the handle, for rn16
             end else if (!matchfailed && !lastbit && thisbitmatches) begin
               handlebitcounter <= handlebitcounter + 4'd1;
