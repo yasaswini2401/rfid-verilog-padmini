@@ -103,13 +103,13 @@ always@(posedge data_clk or posedge reset)begin
         if(bit_counter == 4'd0)begin
             bit_shift_reg = tx_out;
         end
-        tx_bit_src = bit_shift_reg[bit_counter];
+         tx_bit_src = bit_shift_reg[bit_counter];
         
         if((words_done ==4'd1) & (bit_counter == 4'd15))begin
             tx_data_done = 1'd1;
             next_word = 1'd0;
-        end
-        bit_counter = bit_counter +4'd1;
+        end 
+        bit_counter = bit_counter +4'd1;     
 
     end
 end
