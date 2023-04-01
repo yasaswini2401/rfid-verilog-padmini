@@ -30,7 +30,7 @@ module mem(
     output reg tx_bit_src,
     output reg mem_done,
     output reg sl_flag,inven_flag,
-    output reg [1:0]session,
+    output reg [1:0]session,RorW,
     output reg tx_data_done
 );
 
@@ -39,7 +39,7 @@ reg [15:0] StoredCRC, StoredPC, Code1,tx_out; // the first three 16-bit words of
 reg curr_sl_flag,curr_inven_flag,adc_flag;
 reg [2:0]current_cmd;
 reg [7:0]read_state,write_state;
-reg [5:0]temp,RorW;
+reg [5:0]temp,Read_or_Write;
 reg [15:0]adc_temp_data,bit_shift_reg;
 reg next_word,words_done;
 reg [3:0] bit_counter;  
@@ -50,7 +50,7 @@ parameter CMD_EPC_READ = 3'd1;
 parameter CMD_SENSOR_READ = 3'd2;
 parameter CMD_EPC_WRITE = 3'd4;
 
-//RorW
+//
 parameter RorW_INITIAL = 6'd0;
 parameter EPC_READ = 6'd1;
 parameter SENSOR1_READ = 6'd2;
@@ -89,7 +89,7 @@ always@(posedge data_clk or posedge reset)begin
         mem_done =1'd0;
         read_state = STATE_INITIAL;
         write_state = STATE_INITIAL;
-        RorW = RorW_INITIAL;
+        Read_or_Write = RorW_INITIAL;
         mem_sel = 3'd0;
         mem_address = 6'd0;
         tx_data_done = 1'b0;    
@@ -99,18 +99,22 @@ always@(posedge data_clk or posedge reset)begin
             next_word = 1'd1;
         end else begin
             next_word = 1'd0;
-        end
+        end 
         if(bit_counter == 4'd0)begin
             bit_shift_reg = tx_out;
+        end else begin
+             bit_shift_reg =  bit_shift_reg;
         end
-         tx_bit_src = bit_shift_reg[bit_counter];
+        tx_bit_src = bit_shift_reg[bit_counter];
         
         if((words_done ==4'd1) & (bit_counter == 4'd15))begin
             tx_data_done = 1'd1;
             next_word = 1'd0;
-        end 
+        end else begin
+            tx_data_done = 1'd0;
+            next_word = 1'd1;
+        end
         bit_counter = bit_counter +4'd1;     
-
     end
 end
 
@@ -204,27 +208,27 @@ always@(posedge clk)begin
         if(current_cmd == CMD_EPC_READ)begin
             if(packetcomplete)begin 
                 if(readwritebank == 2'b01)begin
-                    RorW = EPC_READ;
+                    Read_or_Write = EPC_READ;
                     temp = readwriteptr+readwords-8'd1;
                 end
             end
         end else if(current_cmd == CMD_SENSOR_READ)begin
             if(sensor_code == 3'd1)begin
-                RorW = SENSOR1_READ;
+                Read_or_Write = SENSOR1_READ;
             end
             else if(sensor_code == 3'd2)begin
-                RorW = SENSOR2_READ;
+                Read_or_Write = SENSOR2_READ;
             end
         end else if(current_cmd == CMD_EPC_WRITE)begin
              if(EPC_data_ready)begin 
                  if(readwritebank == 2'b01)begin
-                     RorW = EPC_WRITE;
+                     Read_or_Write = EPC_WRITE;
                  end
              end
         end
         
         
-        if(RorW == EPC_READ)begin     
+        if(Read_or_Write == EPC_READ)begin     
             if(read_state == STATE_INITIAL)begin
                 if(next_word)begin
                   mem_sel = 3'd1;
@@ -255,7 +259,7 @@ always@(posedge clk)begin
             end
         end
         
-        if(RorW == SENSOR1_READ)begin     
+        if(Read_or_Write == SENSOR1_READ)begin     
             if(read_state == STATE_INITIAL)begin
                 if(next_word)begin
                   mem_sel = 3'd2;
@@ -286,7 +290,7 @@ always@(posedge clk)begin
             end
         end
         
-        if(RorW == SENSOR2_READ)begin     
+        if(Read_or_Write == SENSOR2_READ)begin     
             if(read_state == STATE_INITIAL)begin
                 if(next_word)begin
                   mem_sel = 3'd4;
@@ -323,14 +327,16 @@ always@(posedge clk)begin
        
        if(adc_flag == ADC_DATA_READY_FLAG)begin 
           if(sensor_code == 3'b001)begin  //sensor 1
-            RorW = SENSOR1_WRITE;
+            Read_or_Write = SENSOR1_WRITE;
+            RorW = 2'b10;
            end else if(sensor_code == 3'b010)begin  //sensor 2
-            RorW = SENSOR2_WRITE;
+            R_or_W = SENSOR2_WRITE;
+            RorW = 2'b10;
            end
           adc_temp_data = {sensor_time_stamp,ADC_data};
         end
         
-        if(RorW == SENSOR1_WRITE)begin 
+        if(Read_or_Write == SENSOR1_WRITE)begin 
             if(write_state == STATE_INITIAL)begin
                   mem_sel = 3'd2;
                   write_state = STATE_MEM_SEL;    
@@ -356,7 +362,7 @@ always@(posedge clk)begin
                   mem_done = 1'd0;
                   adc_flag = 1'd0;
                   write_state = STATE_INITIAL;
-                  RorW = RorW_INITIAL;
+                  Read_or_Write = RorW_INITIAL;
                   end
         end
         
