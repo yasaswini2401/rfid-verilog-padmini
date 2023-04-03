@@ -267,7 +267,7 @@ always@(posedge clk)begin
                   write_state = STATE_INITIAL;
                   Read_or_Write = RorW_INITIAL;
                   end
-        end else if(RorW == SENSOR2_WRITE)begin
+        end else if(Read_or_Write == SENSOR2_WRITE)begin
             if(write_state == STATE_INITIAL)begin
                   mem_sel = 3'd4;
                   RorW = 2'b10;
@@ -288,10 +288,10 @@ always@(posedge clk)begin
                   RorW = 2'd0;
                   adc_flag = 1'd0;
                   write_state = STATE_INITIAL;
-                  RorW = RorW_INITIAL;
+                  Read_or_Write = RorW_INITIAL;
                   end
             end
-        end else if(RorW == EPC_WRITE)begin
+    end else if(Read_or_Write == EPC_WRITE)begin
             if(write_state == STATE_INITIAL)begin
                   mem_sel = 3'd1;
                   RorW = 2'b10;
@@ -310,7 +310,7 @@ always@(posedge clk)begin
                   WE = 1'd0;
                   RorW = 2'd0;
                   write_state = STATE_INITIAL;
-                  RorW = RorW_INITIAL;
+                  Read_or_Write = RorW_INITIAL;
             end
         end else if(Read_or_Write == EPC_READ)begin     
             if(read_state == STATE_INITIAL)begin
