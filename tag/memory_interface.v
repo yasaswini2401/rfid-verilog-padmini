@@ -1,7 +1,7 @@
 //final as of 20-03-2023
 
 
-`timescale 1ns / 1ns
+`timescale 1ns / 1ps
 
 module mem(
     input wire clk,factory_reset,reset,packetcomplete,
@@ -86,7 +86,8 @@ always@(posedge data_clk or posedge reset)begin
         Read_or_Write = RorW_INITIAL;
         mem_sel = 3'd0;
         mem_address = 6'd0;
-        tx_data_done = 1'b0;    
+        tx_data_done = 1'b0;
+        RorW = 2'd0;    
     end else begin
     
         if(bit_counter == 4'd2 || (packetcomplete))begin
@@ -109,7 +110,7 @@ always@(posedge data_clk or posedge reset)begin
             next_word = 1'd1;
         end
         bit_counter = bit_counter +4'd1;     
-    end
+      end
 end
 
 always@(posedge clk)begin
@@ -161,9 +162,9 @@ always@(posedge clk)begin
             end else begin
                 curr_inven_flag = inven_flag;
                 curr_sl_flag = sl_flag;
-            end
+         end
         
-         if(rx_cmd[1])begin   //acknowledge command
+        if(rx_cmd[1])begin   //acknowledge command
             current_cmd = CMD_ACK;
         end else if(rx_cmd[7])begin  // read command (epc)
             current_cmd = CMD_EPC_READ;
@@ -190,14 +191,15 @@ always@(posedge clk)begin
                 Read_or_Write = SENSOR2_READ;
             end
         end else if(current_cmd == CMD_EPC_WRITE)begin
-             if(EPC_data_ready)begin 
-                 if(readwritebank == 2'b01)begin
-                     Read_or_Write = EPC_WRITE;
-                 end
-             end
+            if(EPC_data_ready)begin 
+               if(readwritebank == 2'b01)begin
+                   Read_or_Write = EPC_WRITE; 
+               end
+            end
         end else begin
             Read_or_Write = RorW_INITIAL;
         end
+        
         if(ADC_data_ready)begin //have to wait for one clock cycle
             adc_flag = ADC_DATA_READY_FLAG;
         end else begin
@@ -207,43 +209,43 @@ always@(posedge clk)begin
        if(adc_flag == ADC_DATA_READY_FLAG)begin 
           if(sensor_code == 3'b001)begin  //sensor 1
             Read_or_Write = SENSOR1_WRITE;
-           end else if(sensor_code == 3'b010)begin  //sensor 2
+          end else if(sensor_code == 3'b010)begin  //sensor 2
               Read_or_Write = SENSOR2_WRITE;
-           end else begin
+          end else begin
                Read_or_Write = RorW_INITIAL;
-           end
+          end
           adc_temp_data = {sensor_time_stamp,ADC_data};
-        end else begin
-             Read_or_Write = RorW_INITIAL;
-        end
+       end else begin
+           Read_or_Write = RorW_INITIAL;
+       end
         
-        if(current_cmd == CMD_ACK)begin     
-            if(read_state == STATE_INITIAL)begin
-                if(next_word)begin
-                  mem_sel = 3'd1;
-                  RorW = 2'b01;
-                  mem_address = counter_EPC-6'd1; 
-                  PC_B = 1'd0;          
-                  read_state = STATE_1;
-                 end
-            end else if(read_state == STATE_1)begin
-                  PC_B = 1'd1;
-                  SE = 1'd1;
-                  tx_out = mem_read_in;
-                  read_state = STATE_2;
-            end else if(read_state == STATE_2)begin
-                  counter_EPC = counter_EPC -6'd1;               
-                  read_state = STATE_RESET;
-            end else begin
+       if(current_cmd == CMD_ACK)begin     
+           if(read_state == STATE_INITIAL)begin
+               if(next_word)begin
+                 mem_sel = 3'd1;
+                 RorW = 2'b01;
+                 mem_address = counter_EPC-6'd1; 
+                 PC_B = 1'd0;          
+                 read_state = STATE_1;
+                end
+           end else if(read_state == STATE_1)begin
+                 PC_B = 1'd1;
+                 SE = 1'd1;
+                 tx_out = mem_read_in;
+                 read_state = STATE_2;
+           end else if(read_state == STATE_2)begin
+                 counter_EPC = counter_EPC -6'd1;               
+                 read_state = STATE_RESET;
+           end else begin
                 if(counter_EPC!=6'd0)begin
                  read_state = STATE_INITIAL;
                  words_done = 1'd0;   
                 end else begin
-                    words_done = 1'd1;
+                 words_done = 1'd1;
                 end
                 SE = 1'd0;
                 RorW = 2'd0;
-            end
+           end
         end else if(Read_or_Write == SENSOR1_WRITE)begin 
             if(write_state == STATE_INITIAL)begin
                   mem_sel = 3'd2;
@@ -290,8 +292,7 @@ always@(posedge clk)begin
                   write_state = STATE_INITIAL;
                   Read_or_Write = RorW_INITIAL;
                   end
-            end
-    end else if(Read_or_Write == EPC_WRITE)begin
+         end else if(Read_or_Write == EPC_WRITE)begin
             if(write_state == STATE_INITIAL)begin
                   mem_sel = 3'd1;
                   RorW = 2'b10;
@@ -394,5 +395,6 @@ always@(posedge clk)begin
                 SE = 1'd0;
             end
         end
+    end
 end//always
 endmodule
